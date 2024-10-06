@@ -246,8 +246,9 @@ export class TowerManager extends Phaser.Events.EventEmitter {
         );
 
         if (existingConnection) {
-            // Update existing connection to be two-colored
-            this.updateTwoColorRoad(existingConnection, fromTower, toTower);
+            // Update both the existing and new connection to be two-colored
+            this.updateTwoColorRoad(existingConnection, toTower, fromTower);
+            this.createNewRoad(fromTower, toTower);
         } else {
             // Create new connection
             this.createNewRoad(fromTower, toTower);
@@ -312,8 +313,13 @@ export class TowerManager extends Phaser.Events.EventEmitter {
         const roadWidth = fromTower ? fromTower.width * GameConfig.ROAD_WIDTH_RATIO : 10; // Default width if fromTower is undefined
         const distance = road.width;
 
-        if (fromTower && toTower && fromTower.ownerId !== null && toTower.ownerId !== null && fromTower.ownerId !== toTower.ownerId) {
-            // Two-color road
+        // Check if there's a connection in both directions
+        const hasBothWayConnection = fromTower && toTower &&
+            this.connections.some(conn => conn.getData('fromTower') === toTower && conn.getData('toTower') === fromTower);
+
+        if (fromTower && toTower && fromTower.ownerId !== null && toTower.ownerId !== null && 
+            fromTower.ownerId !== toTower.ownerId && hasBothWayConnection) {
+            // Two-color road only if there's a connection in both directions
             graphics.fillStyle(fromColorNumber);
             graphics.fillRect(-distance / 2, -roadWidth / 2, distance / 2, roadWidth);
 
@@ -361,9 +367,15 @@ export class TowerManager extends Phaser.Events.EventEmitter {
         if (connectedTowers.length > 0) {
             const connectionIndex = sourceTower.getNextConnectionIndex();
             const targetTower = connectedTowers[connectionIndex];
-            unit.setTarget(targetTower, sourceTower);
-            this.units.push(unit);
+            if (targetTower) {
+                unit.setTarget(targetTower, sourceTower);
+                this.units.push(unit);
+            } else {
+                console.warn('No valid target tower found. Destroying unit.');
+                unit.destroy();
+            }
         } else {
+            console.warn('No connected towers found. Destroying unit.');
             unit.destroy();
         }
     }

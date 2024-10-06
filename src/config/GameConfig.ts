@@ -12,9 +12,9 @@ export const GameConfig = {
     MAX_TOWERS: 8,
     MIN_OBSTACLES: 4,
     MAX_OBSTACLES: 10,
-    UNIT_GENERATION_DELAY: 1000, // in milliseconds
+    UNIT_GENERATION_DELAY: 700, // in milliseconds
     LIFE_GROWTH_DELAY: 5000, // in milliseconds
-    UNIT_SPEED: 100, // pixels per second
+    UNIT_SPEED: 150, // pixels per second
     INITIAL_TOWER_LIFE: 5,
     MAX_TOWER_LIFE: 50,
 
