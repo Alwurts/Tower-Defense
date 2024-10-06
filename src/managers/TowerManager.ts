@@ -15,30 +15,35 @@ export class TowerManager {
         const minDistance = this.gameMap.size * GameConfig.MIN_DISTANCE_RATIO;
         const padding = towerSize / 2;
 
-        const sampler = new PoissonDiscSampling(
-            this.gameMap.size - 2 * padding,
-            this.gameMap.size - 2 * padding,
-            minDistance
-        );
-        const points = sampler.generate();
+        const points = this.generateTowerPositions(towerSize, minDistance, padding);
 
         for (let i = 0; i < GameConfig.NUM_TOWERS; i++) {
             const point = points[i];
             const towerX = this.gameMap.topLeft.x + point[0] + padding;
             const towerY = this.gameMap.topLeft.y + point[1] + padding;
 
-            let towerColor: string;
-            if (i < GameConfig.NUM_PLAYERS) {
-                towerColor = GameConfig.COLORS[`PLAYER_${i + 1}` as keyof typeof GameConfig.COLORS];
-            } else {
-                towerColor = GameConfig.COLORS.EMPTY_TOWER;
-            }
-
+            const towerColor = this.getTowerColor(i);
             const tower = new Tower(this.scene, towerX, towerY, towerSize, towerColor, i < GameConfig.NUM_PLAYERS ? i : null);
             this.towers.push(tower);
         }
 
         this.setupDragEvents();
+    }
+
+    private generateTowerPositions(towerSize: number, minDistance: number, padding: number): number[][] {
+        const sampler = new PoissonDiscSampling(
+            this.gameMap.size - 2 * padding,
+            this.gameMap.size - 2 * padding,
+            minDistance
+        );
+        return sampler.generate();
+    }
+
+    private getTowerColor(index: number): string {
+        if (index < GameConfig.NUM_PLAYERS) {
+            return GameConfig.COLORS[`PLAYER_${index + 1}` as keyof typeof GameConfig.COLORS];
+        }
+        return GameConfig.COLORS.EMPTY_TOWER;
     }
 
     setupDragEvents() {
@@ -56,14 +61,18 @@ export class TowerManager {
     onDrag(pointer: Phaser.Input.Pointer, tower: Tower) {
         if (tower.ownerId === this.scene.data.get('currentPlayer')) {
             tower.updateDrag(pointer);
-            const hoveredTower = this.getTowerAtPosition(pointer.x, pointer.y);
-            if (hoveredTower && hoveredTower !== tower && this.canCreateConnection(tower, hoveredTower)) {
-                const playerColor = GameConfig.COLORS[`PLAYER_${tower.ownerId! + 1}` as keyof typeof GameConfig.COLORS];
-                const colorNumber = Number.parseInt(playerColor.replace('#', '0x'), 16);
-                tower.setRoadColor(colorNumber); // Fill with player color, default black border
-            } else {
-                tower.setRoadColor(0xFFFFFF); // White fill when not hovering over a valid tower, default black border
-            }
+            this.updateRoadColor(tower, pointer);
+        }
+    }
+
+    private updateRoadColor(tower: Tower, pointer: Phaser.Input.Pointer) {
+        const hoveredTower = this.getTowerAtPosition(pointer.x, pointer.y);
+        if (hoveredTower && hoveredTower !== tower && this.canCreateConnection(tower, hoveredTower)) {
+            const playerColor = GameConfig.COLORS[`PLAYER_${tower.ownerId! + 1}` as keyof typeof GameConfig.COLORS];
+            const colorNumber = Number.parseInt(playerColor.replace('#', '0x'), 16);
+            tower.setRoadColor(colorNumber);
+        } else {
+            tower.setRoadColor(0xFFFFFF);
         }
     }
 
@@ -81,16 +90,10 @@ export class TowerManager {
     canCreateConnection(fromTower: Tower, toTower: Tower): boolean {
         const line = new Phaser.Geom.Line(fromTower.x, fromTower.y, toTower.x, toTower.y);
         
-        for (const tower of this.towers) {
-            if (tower !== fromTower && tower !== toTower) {
-                const circle = new Phaser.Geom.Circle(tower.x, tower.y, tower.width / 2);
-                if (Phaser.Geom.Intersects.LineToCircle(line, circle)) {
-                    return false;
-                }
-            }
-        }
-        
-        return true;
+        return !this.towers.some(tower => 
+            tower !== fromTower && tower !== toTower &&
+            Phaser.Geom.Intersects.LineToCircle(line, new Phaser.Geom.Circle(tower.x, tower.y, tower.width / 2))
+        );
     }
 
     createConnection(fromTower: Tower, toTower: Tower) {
@@ -106,15 +109,18 @@ export class TowerManager {
             fromTower.y + Math.sin(angle) * distance / 2,
             distance,
             roadWidth,
-            colorNumber  // Set the fill color to the player's color
+            colorNumber
         );
         road.setRotation(angle);
-        road.setStrokeStyle(2, 0x000000);  // Set the border color to black
+        road.setStrokeStyle(2, 0x000000);
 
         this.connections.push(road);
         fromTower.endDrag();
 
-        // Bring all towers to the top
+        this.bringTowersToTop();
+    }
+
+    private bringTowersToTop() {
         for (const tower of this.towers) {
             this.scene.children.bringToTop(tower);
         }

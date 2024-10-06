@@ -11,20 +11,24 @@ export class Tower extends Phaser.GameObjects.Container {
         
         this.ownerId = ownerId;
         
-        // Create the tower body
-        this.body = scene.add.rectangle(0, 0, size, size);
-        this.body.setStrokeStyle(2, 0x000000);
-        
-        if (color === GameConfig.COLORS.EMPTY_TOWER) {
-            this.body.setFillStyle(0xFFFFFF); // White background for empty towers
-        } else {
-            this.body.setFillStyle(Number.parseInt(color.replace('#', '0x'), 16));
-        }
-        
+        this.body = this.createTowerBody(size, color);
         this.add(this.body);
+        
         this.setSize(size, size);
         this.setInteractive();
         scene.add.existing(this);
+    }
+
+    private createTowerBody(size: number, color: string): Phaser.GameObjects.Rectangle {
+        const body = this.scene.add.rectangle(0, 0, size, size);
+        body.setStrokeStyle(2, 0x000000);
+        
+        const fillColor = color === GameConfig.COLORS.EMPTY_TOWER
+            ? 0xFFFFFF
+            : Number.parseInt(color.replace('#', '0x'), 16);
+        
+        body.setFillStyle(fillColor);
+        return body;
     }
 
     startDrag(pointer: Phaser.Input.Pointer) {
@@ -41,7 +45,10 @@ export class Tower extends Phaser.GameObjects.Container {
             const distance = Phaser.Math.Distance.Between(this.x, this.y, pointer.x, pointer.y);
             this.road.setSize(distance, this.width / 2);
             this.road.setRotation(angle);
-            this.road.setPosition(this.x + Math.cos(angle) * distance / 2, this.y + Math.sin(angle) * distance / 2);
+            this.road.setPosition(
+                this.x + Math.cos(angle) * distance / 2,
+                this.y + Math.sin(angle) * distance / 2
+            );
         }
     }
 
