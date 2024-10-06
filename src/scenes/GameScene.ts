@@ -1,7 +1,8 @@
 import Phaser from "phaser";
+import { PoissonDiscSampling } from "../utils/PoissonDiscSampling";
 
 export class GameScene extends Phaser.Scene {
-	private readonly NUM_TOWERS = 5; // Define the number of towers
+	private readonly NUM_TOWERS = 6;
 
 	constructor() {
 		super("GameScene");
@@ -22,18 +23,27 @@ export class GameScene extends Phaser.Scene {
 		map.setOrigin(0, 0);
 		map.setStrokeStyle(4, 0x000000);
 
-		// Create towers (outlined squares) inside the map
-		const towerSize = mapSize * 0.08; // Slightly smaller towers
-		const padding = mapSize * 0.1; // Padding from the edges
+		// Use Poisson Disc Sampling to generate tower positions
+		const towerSize = mapSize * 0.08;
+		const minDistance = mapSize / 3; // Increased minimum distance for better spread
+		const padding = towerSize / 2; // Padding to keep towers inside the map
 
-		for (let i = 0; i < this.NUM_TOWERS; i++) {
-			const towerX = Phaser.Math.Between(mapX + padding, mapX + mapSize - padding - towerSize);
-			const towerY = Phaser.Math.Between(mapY + padding, mapY + mapSize - padding - towerSize);
+		const sampler = new PoissonDiscSampling(
+			mapSize - 2 * padding, 
+			mapSize - 2 * padding, 
+			minDistance
+		);
+		const points = sampler.generate();
+
+		// Create towers at the generated points
+		points.slice(0, this.NUM_TOWERS).forEach(point => {
+			const towerX = mapX + point[0] + padding;
+			const towerY = mapY + point[1] + padding;
 
 			const tower = this.add.rectangle(towerX, towerY, towerSize, towerSize, 0x000000);
 			tower.setStrokeStyle(2, 0x000000);
 			tower.setFillStyle(0x000000, 0); // Transparent fill
-		}
+		});
 	}
 
 	update() {
