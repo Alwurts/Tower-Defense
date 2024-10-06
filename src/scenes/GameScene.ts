@@ -37,15 +37,22 @@ export class GameScene extends Phaser.Scene {
 
 		this.navBar.updatePlayerInfo(playerName, playerColor);
 
-		this.input.setDraggable(this.towerManager.getTowersByPlayer(currentPlayer));
+		this.makeTowersDraggable();
 
 		// Initialize tower life
 		for (const tower of this.towerManager.getTowersByPlayer(currentPlayer)) {
-			tower.updateLife(5);
+			tower.updateLife(5, currentPlayer);
 		}
+	}
+
+	private makeTowersDraggable() {
+		const currentPlayer = this.data.get('currentPlayer');
+		const playerTowers = this.towerManager.getTowersByPlayer(currentPlayer);
+		this.input.setDraggable(playerTowers);
 	}
 
 	update(time: number, delta: number) {
 		this.towerManager.update(time, delta);
+		this.makeTowersDraggable(); // Continuously update draggable towers
 	}
 }

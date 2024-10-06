@@ -8,9 +8,12 @@ export class Unit extends Phaser.GameObjects.Container {
     private targetTower: Tower | null = null;
     private path: Phaser.Curves.Line | null = null;
     private progress: number = 0;
+    public ownerId: number;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, size: number, color: number) {
+    constructor(scene: Phaser.Scene, x: number, y: number, size: number, color: number, ownerId: number) {
         super(scene, x, y);
+
+        this.ownerId = ownerId;
 
         // Create a circle instead of a triangle
         this.body = scene.add.circle(0, 0, size / 2, color);

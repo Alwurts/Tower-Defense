@@ -55,6 +55,20 @@ export class TowerManager {
         this.scene.input.on('dragstart', this.onDragStart, this);
         this.scene.input.on('drag', this.onDrag, this);
         this.scene.input.on('dragend', this.onDragEnd, this);
+        this.scene.input.on('gameobjectover', this.onTowerOver, this);
+        this.scene.input.on('gameobjectout', this.onTowerOut, this);
+    }
+
+    onTowerOver(pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) {
+        if (gameObject instanceof Tower && gameObject.ownerId === this.scene.data.get('currentPlayer')) {
+            gameObject.highlight();
+        }
+    }
+
+    onTowerOut(pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) {
+        if (gameObject instanceof Tower) {
+            gameObject.unhighlight();
+        }
     }
 
     onDragStart(pointer: Phaser.Input.Pointer, tower: Tower) {
@@ -65,12 +79,21 @@ export class TowerManager {
 
     onDrag(pointer: Phaser.Input.Pointer, tower: Tower) {
         if (tower.ownerId === this.scene.data.get('currentPlayer')) {
-            tower.updateDrag(pointer);
-            this.updateRoadColor(tower, pointer);
+            if (tower.canCreateOutgoingConnection()) {
+                tower.updateDrag(pointer);
+                this.updateRoadColor(tower, pointer);
+            } else {
+                tower.endDrag(); // End drag if no more connections are available
+            }
         }
     }
 
     private updateRoadColor(tower: Tower, pointer: Phaser.Input.Pointer) {
+        if (!tower.canCreateOutgoingConnection()) {
+            tower.endDrag();
+            return;
+        }
+
         const hoveredTower = this.getTowerAtPosition(pointer.x, pointer.y);
         if (hoveredTower && hoveredTower !== tower && this.canCreateConnection(tower, hoveredTower)) {
             const playerColor = GameConfig.COLORS[`PLAYER_${tower.ownerId! + 1}` as keyof typeof GameConfig.COLORS];
@@ -93,7 +116,7 @@ export class TowerManager {
     }
 
     canCreateConnection(fromTower: Tower, toTower: Tower): boolean {
-        if (!fromTower.canCreateConnection()) return false;
+        if (!fromTower.canCreateOutgoingConnection()) return false;
 
         const line = new Phaser.Geom.Line(fromTower.x, fromTower.y, toTower.x, toTower.y);
         
@@ -105,6 +128,12 @@ export class TowerManager {
 
     createConnection(fromTower: Tower, toTower: Tower) {
         if (!this.canCreateConnection(fromTower, toTower)) return;
+
+        // Remove existing connection in the opposite direction
+        this.removeConnection(toTower, fromTower);
+
+        // Remove existing connection in the same direction
+        this.removeConnection(fromTower, toTower);
 
         const playerColor = GameConfig.COLORS[`PLAYER_${fromTower.ownerId! + 1}` as keyof typeof GameConfig.COLORS];
         const colorNumber = Number.parseInt(playerColor.replace('#', '0x'), 16);
@@ -124,13 +153,26 @@ export class TowerManager {
         road.setStrokeStyle(2, 0x000000);
         road.setData('fromTower', fromTower);
         road.setData('toTower', toTower);
-        road.setDepth(0); // Set depth to be below units and towers
+        road.setDepth(0); // Set depth to be below units and roads
 
         this.connections.push(road);
         fromTower.endDrag();
-        fromTower.addConnection();
+        fromTower.addOutgoingConnection();
 
         this.bringTowersToTop();
+    }
+
+    private removeConnection(fromTower: Tower, toTower: Tower) {
+        const connectionIndex = this.connections.findIndex(conn => 
+            conn.getData('fromTower') === fromTower && conn.getData('toTower') === toTower
+        );
+
+        if (connectionIndex !== -1) {
+            const connection = this.connections[connectionIndex];
+            connection.destroy();
+            this.connections.splice(connectionIndex, 1);
+            fromTower.removeOutgoingConnection();
+        }
     }
 
     private bringTowersToTop() {
@@ -150,11 +192,11 @@ export class TowerManager {
     private onUnitGenerated(unit: Unit, sourceTower: Tower) {
         const connectedTowers = this.getConnectedTowers(sourceTower);
         if (connectedTowers.length > 0) {
-            const targetTower = Phaser.Utils.Array.GetRandom(connectedTowers);
+            const connectionIndex = sourceTower.getNextConnectionIndex();
+            const targetTower = connectedTowers[connectionIndex];
             unit.setTarget(targetTower, sourceTower);
             this.units.push(unit);
         } else {
-            sourceTower.updateLife(sourceTower.life + 1);
             unit.destroy();
         }
     }
@@ -166,15 +208,42 @@ export class TowerManager {
         }
         
         if (targetTower instanceof Tower) {
-            targetTower.updateLife(targetTower.life + 1);
+            const oldOwnerId = targetTower.ownerId;
+            if (targetTower.ownerId === null) {
+                targetTower.updateLife(targetTower.life - 1, unit.ownerId);
+            } else if (targetTower.ownerId === unit.ownerId) {
+                targetTower.updateLife(targetTower.life + 1, unit.ownerId);
+            } else {
+                targetTower.updateLife(targetTower.life - 1, unit.ownerId);
+            }
+            
+            // If the tower changed ownership, update its connections
+            if (oldOwnerId !== targetTower.ownerId) {
+                this.updateConnectionsForTower(targetTower);
+            }
+        }
+    }
+
+    private updateConnectionsForTower(tower: Tower) {
+        // Update the color of connections for the new owner
+        for (const conn of this.connections) {
+            if (conn.getData('fromTower') === tower || conn.getData('toTower') === tower) {
+                const playerColor = GameConfig.COLORS[`PLAYER_${tower.ownerId! + 1}` as keyof typeof GameConfig.COLORS];
+                const colorNumber = Number.parseInt(playerColor.replace('#', '0x'), 16);
+                conn.setFillStyle(colorNumber);
+            }
+        }
+
+        // Make the tower draggable if it belongs to the current player
+        if (tower.ownerId === this.scene.data.get('currentPlayer')) {
+            this.scene.input.setDraggable(tower);
         }
     }
 
     private getConnectedTowers(tower: Tower): Tower[] {
         return this.towers.filter(t => 
             t !== tower && this.connections.some(conn => 
-                (conn.getData('fromTower') === tower && conn.getData('toTower') === t) ||
-                (conn.getData('fromTower') === t && conn.getData('toTower') === tower)
+                conn.getData('fromTower') === tower && conn.getData('toTower') === t
             )
         );
     }
