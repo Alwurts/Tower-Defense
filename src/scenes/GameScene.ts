@@ -38,9 +38,14 @@ export class GameScene extends Phaser.Scene {
 		this.navBar.updatePlayerInfo(playerName, playerColor);
 
 		this.input.setDraggable(this.towerManager.getTowersByPlayer(currentPlayer));
+
+		// Initialize tower life
+		for (const tower of this.towerManager.getTowersByPlayer(currentPlayer)) {
+			tower.updateLife(5);
+		}
 	}
 
-	update() {
-		// Game loop logic here
+	update(time: number, delta: number) {
+		this.towerManager.update(time, delta);
 	}
 }
