@@ -105,4 +105,19 @@ export class PoissonDiscSampling {
 
         return true;
     }
+
+    setMinDistance(newMinDistance: number) {
+        this.radius = newMinDistance;
+        const cellSize = this.radius / Math.sqrt(2);
+        const cols = Math.ceil(this.width / cellSize);
+        const rows = Math.ceil(this.height / cellSize);
+
+        this.grid = [];
+        for (let i = 0; i < cols; i++) {
+            this.grid[i] = [];
+            for (let j = 0; j < rows; j++) {
+                this.grid[i][j] = null;
+            }
+        }
+    }
 }

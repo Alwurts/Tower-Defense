@@ -9,6 +9,11 @@ export class TowerManager {
     private towers: Tower[] = [];
     private connections: Phaser.GameObjects.Rectangle[] = [];
     private units: Unit[] = [];
+    private obstacles: Phaser.GameObjects.Rectangle[] = [];
+    private cuttingLine: Phaser.GameObjects.Line | null = null;
+    private isDrawingCuttingLine: boolean = false;
+    private cuttingLineStart: Phaser.Math.Vector2 | null = null;
+    private cuttingLineEnd: Phaser.Math.Vector2 | null = null;
 
     constructor(private scene: Phaser.Scene, private gameMap: GameMap) {
         this.scene.events.on('unitGenerated', this.onUnitGenerated, this);
@@ -20,12 +25,32 @@ export class TowerManager {
         const minDistance = this.gameMap.size * GameConfig.MIN_DISTANCE_RATIO;
         const padding = towerSize / 2;
 
-        const points = this.generateTowerPositions(towerSize, minDistance, padding);
+        // Generate obstacles first
+        const numObstacles = Phaser.Math.Between(GameConfig.MIN_OBSTACLES, GameConfig.MAX_OBSTACLES);
+        this.generateObstacles(towerSize, minDistance, padding, numObstacles);
 
-        for (let i = 0; i < GameConfig.NUM_TOWERS; i++) {
-            const point = points[i];
-            const towerX = this.gameMap.topLeft.x + point[0] + padding;
-            const towerY = this.gameMap.topLeft.y + point[1] + padding;
+        // Generate towers
+        const numTowers = Phaser.Math.Between(GameConfig.MIN_TOWERS, GameConfig.MAX_TOWERS);
+        let points = this.generateTowerPositions(towerSize, minDistance, padding, numTowers);
+
+        // Check if we have enough points and regenerate if necessary
+        while (points.length < numTowers) {
+            console.warn(`Not enough valid positions generated. Retrying...`);
+            points = this.generateTowerPositions(towerSize, minDistance * 0.9, padding, numTowers);
+        }
+
+        // Create towers for the available points
+        for (let i = 0; i < numTowers; i++) {
+            let point = points[i];
+            let towerX = this.gameMap.topLeft.x + point[0] + padding;
+            let towerY = this.gameMap.topLeft.y + point[1] + padding;
+
+            // Check for overlaps and regenerate position if necessary
+            while (this.checkOverlap(towerX, towerY, towerSize)) {
+                point = this.generateSinglePosition(towerSize, minDistance, padding);
+                towerX = this.gameMap.topLeft.x + point[0] + padding;
+                towerY = this.gameMap.topLeft.y + point[1] + padding;
+            }
 
             const towerColor = this.getTowerColor(i);
             const tower = new Tower(this.scene, towerX, towerY, towerSize, towerColor, i < GameConfig.NUM_PLAYERS ? i : null);
@@ -35,13 +60,80 @@ export class TowerManager {
         this.setupDragEvents();
     }
 
-    private generateTowerPositions(towerSize: number, minDistance: number, padding: number): number[][] {
+    private generateObstacles(towerSize: number, minDistance: number, padding: number, numObstacles: number) {
+        const obstacleSize = towerSize * 0.8; // Slightly smaller than towers
+        let obstaclePoints = this.generatePositions(obstacleSize, minDistance, padding, numObstacles);
+
+        this.obstacles = [];
+        for (let i = 0; i < numObstacles; i++) {
+            let point = obstaclePoints[i];
+            let obstacleX = this.gameMap.topLeft.x + point[0] + padding;
+            let obstacleY = this.gameMap.topLeft.y + point[1] + padding;
+
+            // Check for overlaps and regenerate position if necessary
+            while (this.checkOverlap(obstacleX, obstacleY, obstacleSize)) {
+                point = this.generateSinglePosition(obstacleSize, minDistance, padding);
+                obstacleX = this.gameMap.topLeft.x + point[0] + padding;
+                obstacleY = this.gameMap.topLeft.y + point[1] + padding;
+            }
+
+            const obstacle = this.scene.add.rectangle(obstacleX, obstacleY, obstacleSize, obstacleSize, GameConfig.COLORS.OBSTACLE);
+            obstacle.setStrokeStyle(2, GameConfig.COLORS.BORDER);
+            this.obstacles.push(obstacle);
+        }
+    }
+
+    private checkOverlap(x: number, y: number, size: number): boolean {
+        const checkObject = new Phaser.Geom.Rectangle(x - size / 2, y - size / 2, size, size);
+
+        // Check overlap with towers
+        for (const tower of this.towers) {
+            if (Phaser.Geom.Intersects.RectangleToRectangle(checkObject, tower.getBounds())) {
+                return true;
+            }
+        }
+
+        // Check overlap with obstacles
+        for (const obstacle of this.obstacles) {
+            if (Phaser.Geom.Intersects.RectangleToRectangle(checkObject, obstacle.getBounds())) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private generateSinglePosition(size: number, minDistance: number, padding: number): number[] {
         const sampler = new PoissonDiscSampling(
             this.gameMap.size - 2 * padding,
             this.gameMap.size - 2 * padding,
             minDistance
         );
-        return sampler.generate();
+        const points = sampler.generate();
+        return points[0] || [0, 0]; // Fallback to [0, 0] if no point is generated
+    }
+
+    private generatePositions(size: number, minDistance: number, padding: number, count: number): number[][] {
+        const sampler = new PoissonDiscSampling(
+            this.gameMap.size - 2 * padding,
+            this.gameMap.size - 2 * padding,
+            minDistance
+        );
+        let points = sampler.generate();
+
+        // If we don't have enough points, reduce the minimum distance and try again
+        while (points.length < count) {
+            minDistance *= 0.9;  // Reduce minimum distance by 10%
+            sampler.setMinDistance(minDistance);
+            points = sampler.generate();
+            console.warn(`Retrying with reduced minimum distance: ${minDistance}`);
+        }
+
+        return points.slice(0, count);
+    }
+
+    private generateTowerPositions(towerSize: number, minDistance: number, padding: number, numTowers: number): number[][] {
+        return this.generatePositions(towerSize, minDistance, padding, numTowers);
     }
 
     private getTowerColor(index: number): string {
@@ -55,20 +147,9 @@ export class TowerManager {
         this.scene.input.on('dragstart', this.onDragStart, this);
         this.scene.input.on('drag', this.onDrag, this);
         this.scene.input.on('dragend', this.onDragEnd, this);
-        this.scene.input.on('gameobjectover', this.onTowerOver, this);
-        this.scene.input.on('gameobjectout', this.onTowerOut, this);
-    }
-
-    onTowerOver(pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) {
-        if (gameObject instanceof Tower && gameObject.ownerId === this.scene.data.get('currentPlayer')) {
-            gameObject.highlight();
-        }
-    }
-
-    onTowerOut(pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) {
-        if (gameObject instanceof Tower) {
-            gameObject.unhighlight();
-        }
+        this.scene.input.on('pointerdown', this.onPointerDown, this);
+        this.scene.input.on('pointermove', this.onPointerMove, this);
+        this.scene.input.on('pointerup', this.onPointerUp, this);
     }
 
     onDragStart(pointer: Phaser.Input.Pointer, tower: Tower) {
@@ -120,10 +201,20 @@ export class TowerManager {
 
         const line = new Phaser.Geom.Line(fromTower.x, fromTower.y, toTower.x, toTower.y);
         
-        return !this.towers.some(tower => 
+        // Check for intersections with other towers
+        const towerIntersection = this.towers.some(tower => 
             tower !== fromTower && tower !== toTower &&
             Phaser.Geom.Intersects.LineToCircle(line, new Phaser.Geom.Circle(tower.x, tower.y, tower.width / 2))
         );
+
+        if (towerIntersection) return false;
+
+        // Check for intersections with obstacles
+        const obstacleIntersection = this.obstacles.some(obstacle => 
+            Phaser.Geom.Intersects.LineToRectangle(line, obstacle.getBounds())
+        );
+
+        return !obstacleIntersection;
     }
 
     createConnection(fromTower: Tower, toTower: Tower) {
@@ -140,7 +231,7 @@ export class TowerManager {
 
         const angle = Phaser.Math.Angle.Between(fromTower.x, fromTower.y, toTower.x, toTower.y);
         const distance = Phaser.Math.Distance.Between(fromTower.x, fromTower.y, toTower.x, toTower.y);
-        const roadWidth = fromTower.width / 2;
+        const roadWidth = fromTower.width * GameConfig.ROAD_WIDTH_RATIO;
 
         const road = this.scene.add.rectangle(
             fromTower.x + Math.cos(angle) * distance / 2,
@@ -252,5 +343,91 @@ export class TowerManager {
         for (const unit of this.units) {
             unit.update(time, delta);
         }
+    }
+
+    private onPointerDown = (pointer: Phaser.Input.Pointer) => {
+        if (!this.getTowerAtPosition(pointer.x, pointer.y)) {
+            this.startCutting(pointer.x, pointer.y);
+        }
+    }
+
+    private onPointerMove = (pointer: Phaser.Input.Pointer) => {
+        if (this.isDrawingCuttingLine) {
+            this.updateCutting(pointer.x, pointer.y);
+        }
+    }
+
+    private onPointerUp = (pointer: Phaser.Input.Pointer) => {
+        if (this.isDrawingCuttingLine) {
+            this.endCutting();
+        }
+    }
+
+    private startCutting(x: number, y: number) {
+        this.isDrawingCuttingLine = true;
+        this.cuttingLineStart = new Phaser.Math.Vector2(x, y);
+        this.cuttingLineEnd = new Phaser.Math.Vector2(x, y);
+        this.cuttingLine = this.scene.add.line(0, 0, x, y, x, y, 0x000000); // Changed to black
+        this.cuttingLine.setOrigin(0, 0);
+        this.cuttingLine.setLineWidth(2);
+    }
+
+    private updateCutting(x: number, y: number) {
+        if (this.cuttingLine && this.cuttingLineStart) {
+            this.cuttingLineEnd = new Phaser.Math.Vector2(x, y);
+            this.cuttingLine.setTo(
+                this.cuttingLineStart.x,
+                this.cuttingLineStart.y,
+                this.cuttingLineEnd.x,
+                this.cuttingLineEnd.y
+            );
+        }
+    }
+
+    private endCutting() {
+        this.isDrawingCuttingLine = false;
+        if (this.cuttingLine) {
+            this.checkRoadIntersections();
+            this.cuttingLine.destroy();
+            this.cuttingLine = null;
+            this.cuttingLineStart = null;
+            this.cuttingLineEnd = null;
+        }
+    }
+
+    private checkRoadIntersections() {
+        if (!this.cuttingLineStart || !this.cuttingLineEnd) return;
+
+        const cuttingLineGeom = new Phaser.Geom.Line(
+            this.cuttingLineStart.x,
+            this.cuttingLineStart.y,
+            this.cuttingLineEnd.x,
+            this.cuttingLineEnd.y
+        );
+
+        const currentPlayer = this.scene.data.get('currentPlayer');
+        const roadsToRemove: { fromTower: Tower, toTower: Tower }[] = [];
+
+        this.connections.forEach((road) => {
+            const roadLine = new Phaser.Geom.Line(
+                road.x - road.width / 2 * Math.cos(road.rotation),
+                road.y - road.width / 2 * Math.sin(road.rotation),
+                road.x + road.width / 2 * Math.cos(road.rotation),
+                road.y + road.width / 2 * Math.sin(road.rotation)
+            );
+
+            if (Phaser.Geom.Intersects.LineToLine(cuttingLineGeom, roadLine)) {
+                const fromTower = road.getData('fromTower') as Tower;
+                const toTower = road.getData('toTower') as Tower;
+                if (fromTower.ownerId === currentPlayer) {
+                    roadsToRemove.push({ fromTower, toTower });
+                }
+            }
+        });
+
+        // Remove all intersecting roads
+        roadsToRemove.forEach(({ fromTower, toTower }) => {
+            this.removeConnection(fromTower, toTower);
+        });
     }
 }

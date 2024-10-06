@@ -4,7 +4,7 @@ import { GameConfig } from '../config/GameConfig';
 
 export class Unit extends Phaser.GameObjects.Container {
     private body: Phaser.GameObjects.Arc;
-    private speed: number = 50; // pixels per second
+    private speed: number = GameConfig.UNIT_SPEED; // pixels per second
     private targetTower: Tower | null = null;
     private path: Phaser.Curves.Line | null = null;
     private progress: number = 0;

@@ -21,9 +21,9 @@ export class Tower extends Phaser.GameObjects.Container {
         this.body = this.createTowerBody(size, color);
         this.add(this.body);
         
-        this.lifeText = this.scene.add.text(0, 0, this.life.toString(), {
+        this.lifeText = this.scene.add.text(0, 0, GameConfig.INITIAL_TOWER_LIFE.toString(), {
             fontSize: '16px',
-            color: '#000000',
+            color: GameConfig.COLORS.TEXT,
             align: 'center'
         });
         this.lifeText.setOrigin(0.5);
@@ -46,7 +46,7 @@ export class Tower extends Phaser.GameObjects.Container {
             this.unitGenerationTimer.remove();
         }
         this.unitGenerationTimer = this.scene.time.addEvent({
-            delay: 1500, // Generate a unit every 1.5 seconds when there are outgoing connections
+            delay: GameConfig.UNIT_GENERATION_DELAY,
             callback: this.generateUnit,
             callbackScope: this,
             loop: true
@@ -58,7 +58,7 @@ export class Tower extends Phaser.GameObjects.Container {
             this.lifeGrowthTimer.remove();
         }
         this.lifeGrowthTimer = this.scene.time.addEvent({
-            delay: 3000, // Increase life every 3 seconds when there are no outgoing connections
+            delay: GameConfig.LIFE_GROWTH_DELAY,
             callback: this.growLife,
             callbackScope: this,
             loop: true
@@ -94,7 +94,7 @@ export class Tower extends Phaser.GameObjects.Container {
     startDrag(pointer: Phaser.Input.Pointer) {
         if (!this.canCreateOutgoingConnection()) return;
 
-        const roadWidth = this.width / 2;
+        const roadWidth = this.width * GameConfig.ROAD_WIDTH_RATIO;
         this.road = this.scene.add.rectangle(this.x, this.y, roadWidth, roadWidth, 0xFFFFFF);
         this.road.setStrokeStyle(2, 0x000000);
         this.road.setOrigin(0.5, 0.5);
@@ -130,14 +130,14 @@ export class Tower extends Phaser.GameObjects.Container {
 
     updateLife(newLife: number, unitOwnerId: number) {
         if (this.ownerId === null) {
-            this.life = Phaser.Math.Clamp(this.life - 1, 0, 50);
+            this.life = Phaser.Math.Clamp(this.life - 1, 0, GameConfig.MAX_TOWER_LIFE);
             if (this.life === 0) {
                 this.changeOwner(unitOwnerId);
             }
         } else if (this.ownerId === unitOwnerId) {
-            this.life = Phaser.Math.Clamp(newLife, 0, 50);
+            this.life = Phaser.Math.Clamp(newLife, 0, GameConfig.MAX_TOWER_LIFE);
         } else {
-            this.life = Phaser.Math.Clamp(this.life - 1, 0, 50);
+            this.life = Phaser.Math.Clamp(this.life - 1, 0, GameConfig.MAX_TOWER_LIFE);
             if (this.life === 0) {
                 this.changeOwner(unitOwnerId);
             }
@@ -176,9 +176,8 @@ export class Tower extends Phaser.GameObjects.Container {
     }
 
     canCreateOutgoingConnection(): boolean {
-        if (this.life <= 10) return this.outgoingConnections < 1;
-        if (this.life <= 30) return this.outgoingConnections < 2;
-        return this.outgoingConnections < 3;
+        const allowedRoads = GameConfig.ROADS_PER_LIFE_THRESHOLD.find(threshold => this.life <= threshold.life)?.roads || 0;
+        return this.outgoingConnections < allowedRoads;
     }
 
     addOutgoingConnection() {
