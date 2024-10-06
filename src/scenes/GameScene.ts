@@ -3,11 +3,15 @@ import { GameMap } from "../components/GameMap";
 import { TowerManager } from "../managers/TowerManager";
 import { NavBar } from "../components/NavBar";
 import { GameConfig } from "../config/GameConfig";
+import { AIPlayer } from "../ai/AIPlayer";
 
 export class GameScene extends Phaser.Scene {
 	private gameMap!: GameMap;
 	private towerManager!: TowerManager;
 	private navBar!: NavBar;
+	private aiPlayer!: AIPlayer;
+	private aiUpdateTimer!: Phaser.Time.TimerEvent;
+	private gameEndText!: Phaser.GameObjects.Text;
 
 	constructor() {
 		super("GameScene");
@@ -24,6 +28,10 @@ export class GameScene extends Phaser.Scene {
 		this.towerManager = new TowerManager(this, this.gameMap);
 
 		this.initializeGame();
+		this.initializeAI();
+
+		// Add event listener for game end
+		this.towerManager.on('gameEnd', this.onGameEnd, this);
 	}
 
 	private initializeGame() {
@@ -45,6 +53,22 @@ export class GameScene extends Phaser.Scene {
 		}
 	}
 
+	private initializeAI() {
+		this.aiPlayer = new AIPlayer(this.towerManager, 1); // AI is player 1
+		this.aiUpdateTimer = this.time.addEvent({
+			delay: 2000, // AI makes a move every 2 seconds
+			callback: this.updateAI,
+			callbackScope: this,
+			loop: true
+		});
+	}
+
+	private updateAI() {
+		if (this.data.get('currentPlayer') === 0) { // Only update AI when it's not the AI's turn
+			this.aiPlayer.update();
+		}
+	}
+
 	private makeTowersDraggable() {
 		const currentPlayer = this.data.get('currentPlayer');
 		const playerTowers = this.towerManager.getTowersByPlayer(currentPlayer);
@@ -54,5 +78,23 @@ export class GameScene extends Phaser.Scene {
 	update(time: number, delta: number) {
 		this.towerManager.update(time, delta);
 		this.makeTowersDraggable(); // Continuously update draggable towers
+	}
+
+	private onGameEnd(winner: number) {
+		this.aiUpdateTimer.remove();
+		
+		const { width, height } = this.cameras.main;
+		const message = winner === 0 ? "You Win!" : "Game Over";
+		
+		this.gameEndText = this.add.text(width / 2, height / 2, message, {
+			fontSize: '64px',
+			color: '#ffffff',
+			stroke: '#000000',
+			strokeThickness: 6,
+			align: 'center'
+		}).setOrigin(0.5);
+
+		// Disable input for towers
+		this.input.setDraggable(this.towerManager.getAllTowers(), false);
 	}
 }

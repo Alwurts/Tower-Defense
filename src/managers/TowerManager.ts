@@ -5,17 +5,19 @@ import { GameMap } from '../components/GameMap';
 import { GameConfig } from '../config/GameConfig';
 import { PoissonDiscSampling } from '../utils/PoissonDiscSampling';
 
-export class TowerManager {
+export class TowerManager extends Phaser.Events.EventEmitter {
     private towers: Tower[] = [];
     private connections: Phaser.GameObjects.Rectangle[] = [];
     private units: Unit[] = [];
     private obstacles: Phaser.GameObjects.Rectangle[] = [];
     private cuttingLine: Phaser.GameObjects.Line | null = null;
-    private isDrawingCuttingLine: boolean = false;
+    private isDrawingCuttingLine = false;
     private cuttingLineStart: Phaser.Math.Vector2 | null = null;
     private cuttingLineEnd: Phaser.Math.Vector2 | null = null;
+    private tempRoad: Phaser.GameObjects.Graphics | null = null;
 
     constructor(private scene: Phaser.Scene, private gameMap: GameMap) {
+        super();
         this.scene.events.on('unitGenerated', this.onUnitGenerated, this);
         this.scene.events.on('unitArrived', this.onUnitArrived, this);
     }
@@ -155,6 +157,7 @@ export class TowerManager {
     onDragStart(pointer: Phaser.Input.Pointer, tower: Tower) {
         if (tower.ownerId === this.scene.data.get('currentPlayer')) {
             tower.startDrag(pointer);
+            this.tempRoad = this.scene.add.graphics();
         }
     }
 
@@ -162,26 +165,11 @@ export class TowerManager {
         if (tower.ownerId === this.scene.data.get('currentPlayer')) {
             if (tower.canCreateOutgoingConnection()) {
                 tower.updateDrag(pointer);
-                this.updateRoadColor(tower, pointer);
+                this.updateTempRoad(tower, pointer);
             } else {
-                tower.endDrag(); // End drag if no more connections are available
+                tower.endDrag();
+                this.clearTempRoad();
             }
-        }
-    }
-
-    private updateRoadColor(tower: Tower, pointer: Phaser.Input.Pointer) {
-        if (!tower.canCreateOutgoingConnection()) {
-            tower.endDrag();
-            return;
-        }
-
-        const hoveredTower = this.getTowerAtPosition(pointer.x, pointer.y);
-        if (hoveredTower && hoveredTower !== tower && this.canCreateConnection(tower, hoveredTower)) {
-            const playerColor = GameConfig.COLORS[`PLAYER_${tower.ownerId! + 1}` as keyof typeof GameConfig.COLORS];
-            const colorNumber = Number.parseInt(playerColor.replace('#', '0x'), 16);
-            tower.setRoadColor(colorNumber);
-        } else {
-            tower.setRoadColor(0xFFFFFF);
         }
     }
 
@@ -193,10 +181,42 @@ export class TowerManager {
             } else {
                 tower.endDrag();
             }
+            this.clearTempRoad();
         }
     }
 
-    canCreateConnection(fromTower: Tower, toTower: Tower): boolean {
+    private updateTempRoad(fromTower: Tower, pointer: Phaser.Input.Pointer) {
+        if (!this.tempRoad) return;
+
+        this.tempRoad.clear();
+
+        const toTower = this.getTowerAtPosition(pointer.x, pointer.y);
+        const roadWidth = fromTower.width * GameConfig.ROAD_WIDTH_RATIO;
+
+        if (toTower && toTower !== fromTower && this.canCreateConnection(fromTower, toTower)) {
+            const fromColor = GameConfig.COLORS[`PLAYER_${fromTower.ownerId! + 1}` as keyof typeof GameConfig.COLORS];
+            const fromColorNumber = typeof fromColor === 'string' ? Number.parseInt(fromColor.replace('#', '0x'), 16) : fromColor;
+
+            this.tempRoad.lineStyle(roadWidth, fromColorNumber);
+        } else {
+            this.tempRoad.lineStyle(roadWidth, 0xFFFFFF);
+        }
+
+        this.tempRoad.beginPath();
+        this.tempRoad.moveTo(fromTower.x, fromTower.y);
+        this.tempRoad.lineTo(pointer.x, pointer.y);
+        this.tempRoad.strokePath();
+    }
+
+    private clearTempRoad() {
+        if (this.tempRoad) {
+            this.tempRoad.clear();
+            this.tempRoad.destroy();
+            this.tempRoad = null;
+        }
+    }
+
+    public canCreateConnection(fromTower: Tower, toTower: Tower): boolean {
         if (!fromTower.canCreateOutgoingConnection()) return false;
 
         const line = new Phaser.Geom.Line(fromTower.x, fromTower.y, toTower.x, toTower.y);
@@ -217,40 +237,96 @@ export class TowerManager {
         return !obstacleIntersection;
     }
 
-    createConnection(fromTower: Tower, toTower: Tower) {
+    public createConnection(fromTower: Tower, toTower: Tower) {
         if (!this.canCreateConnection(fromTower, toTower)) return;
 
-        // Remove existing connection in the opposite direction
-        this.removeConnection(toTower, fromTower);
-
-        // Remove existing connection in the same direction
-        this.removeConnection(fromTower, toTower);
-
-        const playerColor = GameConfig.COLORS[`PLAYER_${fromTower.ownerId! + 1}` as keyof typeof GameConfig.COLORS];
-        const colorNumber = Number.parseInt(playerColor.replace('#', '0x'), 16);
-
-        const angle = Phaser.Math.Angle.Between(fromTower.x, fromTower.y, toTower.x, toTower.y);
-        const distance = Phaser.Math.Distance.Between(fromTower.x, fromTower.y, toTower.x, toTower.y);
-        const roadWidth = fromTower.width * GameConfig.ROAD_WIDTH_RATIO;
-
-        const road = this.scene.add.rectangle(
-            fromTower.x + Math.cos(angle) * distance / 2,
-            fromTower.y + Math.sin(angle) * distance / 2,
-            distance,
-            roadWidth,
-            colorNumber
+        // Check for existing connection in the opposite direction
+        const existingConnection = this.connections.find(conn => 
+            conn.getData('fromTower') === toTower && conn.getData('toTower') === fromTower
         );
-        road.setRotation(angle);
-        road.setStrokeStyle(2, 0x000000);
-        road.setData('fromTower', fromTower);
-        road.setData('toTower', toTower);
-        road.setDepth(0); // Set depth to be below units and roads
 
-        this.connections.push(road);
+        if (existingConnection) {
+            // Update existing connection to be two-colored
+            this.updateTwoColorRoad(existingConnection, fromTower, toTower);
+        } else {
+            // Create new connection
+            this.createNewRoad(fromTower, toTower);
+        }
+
         fromTower.endDrag();
         fromTower.addOutgoingConnection();
 
         this.bringTowersToTop();
+    }
+
+    private createNewRoad(fromTower: Tower, toTower: Tower) {
+        const angle = Phaser.Math.Angle.Between(fromTower.x, fromTower.y, toTower.x, toTower.y);
+        const distance = Phaser.Math.Distance.Between(fromTower.x, fromTower.y, toTower.x, toTower.y);
+        const roadWidth = fromTower.width * GameConfig.ROAD_WIDTH_RATIO;
+
+        const road = new Phaser.GameObjects.Container(this.scene, 
+            fromTower.x + Math.cos(angle) * distance / 2,
+            fromTower.y + Math.sin(angle) * distance / 2
+        );
+
+        const graphics = this.scene.add.graphics();
+        road.add(graphics);
+
+        road.setRotation(angle);
+        road.setSize(distance, roadWidth);
+        road.setData('fromTower', fromTower);
+        road.setData('toTower', toTower);
+        road.setData('graphics', graphics);
+        road.setDepth(0);
+
+        this.scene.add.existing(road);
+
+        this.updateRoadColor(road, fromTower, toTower);
+
+        this.connections.push(road);
+    }
+
+    private updateTwoColorRoad(road: Phaser.GameObjects.Container, fromTower: Tower, toTower: Tower) {
+        this.updateRoadColor(road, fromTower, toTower);
+    }
+
+    private updateRoadColor(road: Phaser.GameObjects.Container, fromTower: Tower | undefined, toTower: Tower | undefined) {
+        const fromColor = fromTower && fromTower.ownerId !== null 
+            ? GameConfig.COLORS[`PLAYER_${fromTower.ownerId + 1}` as keyof typeof GameConfig.COLORS] 
+            : GameConfig.COLORS.EMPTY_TOWER;
+        const toColor = toTower && toTower.ownerId !== null 
+            ? GameConfig.COLORS[`PLAYER_${toTower.ownerId + 1}` as keyof typeof GameConfig.COLORS] 
+            : GameConfig.COLORS.EMPTY_TOWER;
+
+        const fromColorNumber = typeof fromColor === 'string' ? Number.parseInt(fromColor.replace('#', '0x'), 16) : fromColor;
+        const toColorNumber = typeof toColor === 'string' ? Number.parseInt(toColor.replace('#', '0x'), 16) : toColor;
+
+        const graphics = road.getData('graphics') as Phaser.GameObjects.Graphics;
+        if (!graphics) {
+            console.error('Graphics object not found in road container');
+            return;
+        }
+
+        graphics.clear();
+
+        const roadWidth = fromTower ? fromTower.width * GameConfig.ROAD_WIDTH_RATIO : 10; // Default width if fromTower is undefined
+        const distance = road.width;
+
+        if (fromTower && toTower && fromTower.ownerId !== null && toTower.ownerId !== null && fromTower.ownerId !== toTower.ownerId) {
+            // Two-color road
+            graphics.fillStyle(fromColorNumber);
+            graphics.fillRect(-distance / 2, -roadWidth / 2, distance / 2, roadWidth);
+
+            graphics.fillStyle(toColorNumber);
+            graphics.fillRect(0, -roadWidth / 2, distance / 2, roadWidth);
+        } else {
+            // Single-color road
+            graphics.fillStyle(fromColorNumber);
+            graphics.fillRect(-distance / 2, -roadWidth / 2, distance, roadWidth);
+        }
+
+        graphics.lineStyle(2, 0x000000);
+        graphics.strokeRect(-distance / 2, -roadWidth / 2, distance, roadWidth);
     }
 
     private removeConnection(fromTower: Tower, toTower: Tower) {
@@ -312,6 +388,9 @@ export class TowerManager {
             if (oldOwnerId !== targetTower.ownerId) {
                 this.updateConnectionsForTower(targetTower);
             }
+
+            // Check for game end condition
+            this.checkGameEnd();
         }
     }
 
@@ -319,9 +398,7 @@ export class TowerManager {
         // Update the color of connections for the new owner
         for (const conn of this.connections) {
             if (conn.getData('fromTower') === tower || conn.getData('toTower') === tower) {
-                const playerColor = GameConfig.COLORS[`PLAYER_${tower.ownerId! + 1}` as keyof typeof GameConfig.COLORS];
-                const colorNumber = Number.parseInt(playerColor.replace('#', '0x'), 16);
-                conn.setFillStyle(colorNumber);
+                this.updateRoadColor(conn, conn.getData('fromTower'), conn.getData('toTower'));
             }
         }
 
@@ -429,5 +506,21 @@ export class TowerManager {
         roadsToRemove.forEach(({ fromTower, toTower }) => {
             this.removeConnection(fromTower, toTower);
         });
+    }
+
+    // Add this method to the TowerManager class
+    getAllTowers(): Tower[] {
+        return this.towers;
+    }
+
+    private checkGameEnd() {
+        const player0Towers = this.getTowersByPlayer(0);
+        const player1Towers = this.getTowersByPlayer(1);
+
+        if (player0Towers.length === 0) {
+            this.emit('gameEnd', 1); // AI wins
+        } else if (player1Towers.length === 0) {
+            this.emit('gameEnd', 0); // Player wins
+        }
     }
 }

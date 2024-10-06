@@ -9,9 +9,11 @@ export class Unit extends Phaser.GameObjects.Container {
     private path: Phaser.Curves.Line | null = null;
     private progress: number = 0;
     public ownerId: number;
+    private scene: Phaser.Scene;
 
     constructor(scene: Phaser.Scene, x: number, y: number, size: number, color: number, ownerId: number) {
         super(scene, x, y);
+        this.scene = scene;
 
         this.ownerId = ownerId;
 
@@ -43,8 +45,51 @@ export class Unit extends Phaser.GameObjects.Container {
                 this.arrive();
             } else {
                 this.updatePosition(this.progress);
+                this.checkCollision();
             }
         }
+    }
+
+    private checkCollision() {
+        const units = this.scene.children.getChildren().filter(child => child instanceof Unit) as Unit[];
+        for (const otherUnit of units) {
+            if (otherUnit !== this && otherUnit.ownerId !== this.ownerId) {
+                const distance = Phaser.Math.Distance.Between(this.x, this.y, otherUnit.x, otherUnit.y);
+                if (distance < this.body.radius + otherUnit.body.radius) {
+                    this.collide(otherUnit);
+                    break;
+                }
+            }
+        }
+    }
+
+    private collide(otherUnit: Unit) {
+        // Destroy both units
+        this.destroy();
+        otherUnit.destroy();
+
+        // Create an explosion effect
+        this.createExplosion();
+    }
+
+    private createExplosion() {
+        const particles = this.scene.add.particles('pixel');
+        const emitter = particles.createEmitter({
+            speed: { min: -800, max: 800 },
+            angle: { min: 0, max: 360 },
+            scale: { start: 0.5, end: 0 },
+            blendMode: 'SCREEN',
+            lifespan: 300,
+            gravityY: 800
+        });
+
+        emitter.setPosition(this.x, this.y);
+        emitter.setTint(0xffff00, 0xff0000);
+        emitter.explode(50);
+
+        this.scene.time.delayedCall(300, () => {
+            particles.destroy();
+        });
     }
 
     private updatePosition(t: number) {
