@@ -3,23 +3,23 @@ import { GameConfig } from '../config/GameConfig';
 import { Unit } from './Unit';
 
 export class Tower extends Phaser.GameObjects.Container {
-    private body: Phaser.GameObjects.Rectangle;
+    private towerBody: Phaser.GameObjects.Rectangle;
     private road: Phaser.GameObjects.Rectangle | null = null;
     private lifeText: Phaser.GameObjects.Text;
     public ownerId: number | null = null;
-    public life: number = 5;
-    public outgoingConnections: number = 0;
+    public life = 5;
+    public outgoingConnections = 0;
     private unitGenerationTimer: Phaser.Time.TimerEvent | null = null;
     private lifeGrowthTimer: Phaser.Time.TimerEvent | null = null;
-    private lastConnectionIndex: number = -1;
+    private lastConnectionIndex = -1;
 
     constructor(scene: Phaser.Scene, x: number, y: number, size: number, color: string, ownerId: number | null = null) {
         super(scene, x, y);
         
         this.ownerId = ownerId;
         
-        this.body = this.createTowerBody(size, color);
-        this.add(this.body);
+        this.towerBody = this.createTowerBody(size, color);
+        this.add(this.towerBody);
         
         this.lifeText = this.scene.add.text(0, 0, GameConfig.INITIAL_TOWER_LIFE.toString(), {
             fontSize: '16px',
@@ -31,7 +31,7 @@ export class Tower extends Phaser.GameObjects.Container {
         
         this.setSize(size, size);
         this.setInteractive();
-        scene.add.existing(this);
+        scene.add.existing(this as unknown as Phaser.GameObjects.GameObject);
 
         if (this.ownerId !== null) {
             this.startUnitGeneration();
@@ -68,7 +68,8 @@ export class Tower extends Phaser.GameObjects.Container {
     private generateUnit() {
         if (this.ownerId === null || this.outgoingConnections === 0) return;
 
-        const unitColor = Number(GameConfig.COLORS[`PLAYER_${this.ownerId + 1}` as keyof typeof GameConfig.COLORS].replace('#', '0x'));
+        const colorKey = `PLAYER_${this.ownerId + 1}` as keyof typeof GameConfig.COLORS;
+        const unitColor = Number(GameConfig.COLORS[colorKey].toString().replace('#', '0x'));
         const unit = new Unit(this.scene, this.x, this.y, this.width / 3, unitColor, this.ownerId);
         
         this.scene.events.emit('unitGenerated', unit, this);
@@ -91,14 +92,14 @@ export class Tower extends Phaser.GameObjects.Container {
         return body;
     }
 
-    startDrag(pointer: Phaser.Input.Pointer) {
+    startDrag() {
         if (!this.canCreateOutgoingConnection()) return;
 
         const roadWidth = this.width * GameConfig.ROAD_WIDTH_RATIO;
         this.road = this.scene.add.rectangle(this.x, this.y, roadWidth, roadWidth, 0xFFFFFF);
         this.road.setStrokeStyle(2, 0x000000);
         this.road.setOrigin(0.5, 0.5);
-        this.scene.children.bringToTop(this);
+        this.scene.children.bringToTop(this as unknown as Phaser.GameObjects.GameObject);
     }
 
     updateDrag(pointer: Phaser.Input.Pointer) {
@@ -122,7 +123,7 @@ export class Tower extends Phaser.GameObjects.Container {
         }
     }
 
-    setRoadColor(fillColor: number, strokeColor: number = 0x000000) {
+    setRoadColor(fillColor: number, strokeColor = 0x000000) {
         if (this.road) {
             this.road.setFillStyle(fillColor);
             this.road.setStrokeStyle(2, strokeColor);
@@ -156,19 +157,21 @@ export class Tower extends Phaser.GameObjects.Container {
 
     updateColor() {
         if (this.ownerId !== null) {
-            const color = GameConfig.COLORS[`PLAYER_${this.ownerId + 1}` as keyof typeof GameConfig.COLORS];
-            const fillColor = Number.parseInt(color.replace('#', '0x'), 16);
-            this.body.setFillStyle(fillColor);
+            const colorKey = `PLAYER_${this.ownerId + 1}` as keyof typeof GameConfig.COLORS;
+            const color = GameConfig.COLORS[colorKey];
+            const fillColor = Number.parseInt(color.toString().replace('#', '0x'), 16);
+            this.towerBody.setFillStyle(fillColor);
         } else {
-            this.body.setFillStyle(0xFFFFFF); // White for neutral towers
+            this.towerBody.setFillStyle(0xFFFFFF); // White for neutral towers
         }
     }
 
     highlight() {
         if (this.canCreateOutgoingConnection() && this.ownerId !== null) {
-            const color = GameConfig.COLORS[`PLAYER_${this.ownerId + 1}` as keyof typeof GameConfig.COLORS];
-            const highlightColor = Phaser.Display.Color.HexStringToColor(color).lighten(50).color;
-            this.body.setFillStyle(highlightColor);
+            const colorKey = `PLAYER_${this.ownerId + 1}` as keyof typeof GameConfig.COLORS;
+            const color = GameConfig.COLORS[colorKey];
+            const highlightColor = Phaser.Display.Color.HexStringToColor(color.toString()).lighten(50).color;
+            this.towerBody.setFillStyle(highlightColor);
         }
     }
 

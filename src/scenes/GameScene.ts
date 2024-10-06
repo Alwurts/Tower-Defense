@@ -11,18 +11,17 @@ export class GameScene extends Phaser.Scene {
 	private navBar!: NavBar;
 	private aiPlayer!: AIPlayer;
 	private aiUpdateTimer!: Phaser.Time.TimerEvent;
-	private gameEndText!: Phaser.GameObjects.Text;
 
 	constructor() {
 		super("GameScene");
 	}
 
 	preload() {
-		this.load.image('pixel', 'assets/pixel.png');
+		this.load.image("pixel", "assets/pixel.png");
 	}
 
 	create() {
-		const { width, height } = this.cameras.main;
+		const { width } = this.cameras.main;
 		this.navBar = new NavBar(this, width);
 		this.gameMap = new GameMap(this);
 		this.towerManager = new TowerManager(this, this.gameMap);
@@ -31,15 +30,15 @@ export class GameScene extends Phaser.Scene {
 		this.initializeAI();
 
 		// Add event listener for game end
-		this.towerManager.on('gameEnd', this.onGameEnd, this);
+		this.towerManager.on("gameEnd", this.onGameEnd, this);
 	}
 
 	private initializeGame() {
 		this.towerManager.createTowers();
 
 		const currentPlayer = 0;
-		this.data.set('currentPlayer', currentPlayer);
-		
+		this.data.set("currentPlayer", currentPlayer);
+
 		const playerColor = GameConfig.COLORS.PLAYER_1;
 		const playerName = "Player 1";
 
@@ -59,18 +58,19 @@ export class GameScene extends Phaser.Scene {
 			delay: 2000, // AI makes a move every 2 seconds
 			callback: this.updateAI,
 			callbackScope: this,
-			loop: true
+			loop: true,
 		});
 	}
 
 	private updateAI() {
-		if (this.data.get('currentPlayer') === 0) { // Only update AI when it's not the AI's turn
+		if (this.data.get("currentPlayer") === 0) {
+			// Only update AI when it's not the AI's turn
 			this.aiPlayer.update();
 		}
 	}
 
 	private makeTowersDraggable() {
-		const currentPlayer = this.data.get('currentPlayer');
+		const currentPlayer = this.data.get("currentPlayer");
 		const playerTowers = this.towerManager.getTowersByPlayer(currentPlayer);
 		this.input.setDraggable(playerTowers);
 	}
@@ -80,19 +80,8 @@ export class GameScene extends Phaser.Scene {
 		this.makeTowersDraggable(); // Continuously update draggable towers
 	}
 
-	private onGameEnd(winner: number) {
+	private onGameEnd() {
 		this.aiUpdateTimer.remove();
-		
-		const { width, height } = this.cameras.main;
-		const message = winner === 0 ? "You Win!" : "Game Over";
-		
-		this.gameEndText = this.add.text(width / 2, height / 2, message, {
-			fontSize: '64px',
-			color: '#ffffff',
-			stroke: '#000000',
-			strokeThickness: 6,
-			align: 'center'
-		}).setOrigin(0.5);
 
 		// Disable input for towers
 		this.input.setDraggable(this.towerManager.getAllTowers(), false);
