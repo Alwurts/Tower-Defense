@@ -3,14 +3,15 @@ import { GameConfig } from '../config/GameConfig';
 
 export class GameMap extends Phaser.GameObjects.Rectangle {
     constructor(scene: Phaser.Scene) {
-        const mapSize = Math.min(scene.cameras.main.width, scene.cameras.main.height) * GameConfig.MAP_SIZE_RATIO;
+        const availableHeight = scene.cameras.main.height - GameConfig.NAVBAR_HEIGHT;
+        const mapSize = Math.min(scene.cameras.main.width, availableHeight) * GameConfig.MAP_SIZE_RATIO;
         const mapX = (scene.cameras.main.width - mapSize) / 2;
-        const mapY = (scene.cameras.main.height - mapSize) / 2;
+        const mapY = GameConfig.NAVBAR_HEIGHT + (availableHeight - mapSize) / 2;
 
-        super(scene, mapX, mapY, mapSize, mapSize, GameConfig.COLORS.MAP_FILL);
+        super(scene, mapX, mapY, mapSize, mapSize, GameConfig.COLORS.BACKGROUND);
 
         this.setOrigin(0, 0);
-        this.setStrokeStyle(4, GameConfig.COLORS.MAP_STROKE);
+        this.setStrokeStyle(GameConfig.BORDER_THICKNESS, GameConfig.COLORS.BORDER);
 
         scene.add.existing(this);
     }
