@@ -10,16 +10,16 @@ export const GameConfig = {
     NUM_PLAYERS: 2,
     MIN_TOWERS: 4,
     MAX_TOWERS: 8,
-    MIN_OBSTACLES: 2,
-    MAX_OBSTACLES: 5,
+    MIN_OBSTACLES: 4,
+    MAX_OBSTACLES: 10,
     UNIT_GENERATION_DELAY: 1000, // in milliseconds
     LIFE_GROWTH_DELAY: 5000, // in milliseconds
-    UNIT_SPEED: 50, // pixels per second
+    UNIT_SPEED: 100, // pixels per second
     INITIAL_TOWER_LIFE: 5,
     MAX_TOWER_LIFE: 50,
 
     // Road mechanics
-    ROAD_WIDTH_RATIO: 0.5, // Relative to tower size
+    ROAD_WIDTH_RATIO: 0.4, // Relative to tower size
     ROADS_PER_LIFE_THRESHOLD: [
         { life: 10, roads: 1 },
         { life: 30, roads: 2 },

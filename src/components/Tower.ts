@@ -105,7 +105,8 @@ export class Tower extends Phaser.GameObjects.Container {
         if (this.road) {
             const angle = Phaser.Math.Angle.Between(this.x, this.y, pointer.x, pointer.y);
             const distance = Phaser.Math.Distance.Between(this.x, this.y, pointer.x, pointer.y);
-            this.road.setSize(distance, this.width / 2);
+            const roadWidth = this.width * GameConfig.ROAD_WIDTH_RATIO;
+            this.road.setSize(distance, roadWidth);
             this.road.setRotation(angle);
             this.road.setPosition(
                 this.x + Math.cos(angle) * distance / 2,
